@@ -1,0 +1,99 @@
+**Elgato Stream Deck Plugin: Arctis Headset Battery Monitor**
+
+### Overview
+
+This plugin will display the battery level of an Arctis wireless headset on an Elgato Stream Deck key. It will poll for the battery status every 30 seconds (configurable) and support the following battery states:
+
+- **Battery Levels:** 25%, 50%, 75%, 100%
+- **Charging Status:** Charging indicator when applicable
+- **Disconnected State:** Detect when the headset is not connected
+
+### UI Design
+
+- **Primary Icon:** Headphone icon
+- **Battery Percentage:** Centered text below the icon
+- **Charging Indicator:** Lightning emoji (⚡) next to the percentage if charging
+
+### Data Source
+
+Fetching battery state is non-trivial and requires reverse engineering similar projects. The following GitHub repositories provide insight into how to extract battery status:
+
+1. [Arctis Battery Windows App](https://github.com/craigster1991/arctis-battery-win-app)
+2. [Arctis OLED Battery Indicator](https://github.com/EranVazana/Arctis-OLED-Battery-Indicator)
+3. [Arctis Battery Indicator](https://github.com/aarol/arctis-battery-indicator)
+4. [Arctis Battery Percentage](https://github.com/YourM4jesty/ArctisBatteryPercentage)
+5. [Arctis USB Finder](https://github.com/richrace/arctis-usb-finder)
+
+Based on [this blog post](https://aarol.dev/posts/arctis-hid/), the battery status is limited to four levels (25%, 50%, 75%, 100%) and includes charging and disconnection detection.
+
+### Plugin Functionality
+
+- **Polling Interval:** Default 30 seconds (configurable via settings)
+- **Battery Fetching Method:** Reverse-engineered using USB HID or existing Windows APIs
+- **Stream Deck Integration:**
+  - Uses the [Stream Deck SDK](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started)
+  - Follows the [Key Plugin Guide](https://docs.elgato.com/streamdeck/sdk/guides/keys)
+
+### Implementation Details
+
+- **SDK Documentation:**
+
+  - [Getting Started](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started)
+  - [Your First Changes](https://docs.elgato.com/streamdeck/sdk/introduction/your-first-changes)
+  - [Plugin Environment](https://docs.elgato.com/streamdeck/sdk/introduction/plugin-environment)
+  - [Key Plugin Guide](https://docs.elgato.com/streamdeck/sdk/guides/keys)
+  - [Manifest Reference](https://docs.elgato.com/streamdeck/sdk/references/manifest)
+
+- **Tech Stack:** JavaScript (Node.js) for Stream Deck plugin development
+
+- To find the connected headset, use a similar function to [this](https://github.com/EranVazana/Arctis-OLED-Battery-Indicator/blob/master/ListHeadsets.js#L12)
+
+- **USB HID Communication:** Extract battery level via direct USB polling or leveraging OS-level APIs
+
+  - **Establishing a Connection:**
+    - Device identification using the `node-hid` library to find the connected SteelSeries device
+    - Creating a connection using the device path and setting non-blocking communication
+  - **Requesting Battery Information:**
+    - Sending a specific byte sequence (`[0x06, 0x18]`) to request battery status
+    - Reading the response from the device, which includes battery level data
+  - **Interpreting the Data:**
+    - Extracting battery percentage from the third byte of the response
+    - Validating the extracted value to ensure it's a valid battery percentage
+
+* **Updating Elgato Key UI with Battery Data:**
+
+  - **Retrieve Battery Data:** Extract the battery level from the USB HID response.
+  - **Format the UI Elements:**
+    - Display the headphone icon as the primary visual element.
+    - Show the battery percentage centered below the icon.
+    - If charging, append a lightning emoji (⚡) next to the percentage.
+  - Poll for this data every 30 seconds by default (configurable by the user)
+
+* **Configuration:**
+
+  - User can set polling frequency
+  - User can select which headset battery to monitor
+
+### Supported Headset
+
+- **User's Headset:** Arctis 7 (2017 Edition)
+  - The headset ID for this model is [0x1038, 0x1260]
+
+### Project Milestones
+
+(Agent should check in with the user at each milestone for feedback and progress confirmation.)
+
+1. **Create a function that can connect to the SteelSeries headset and extract the battery % and whether it's charging.**
+
+2. **Create a dummy Stream Deck action** ([reference](https://docs.elgato.com/streamdeck/sdk/guides/actions)) with a text input for the battery % and toggle icon visibility based on whether it's charging or not.
+
+3. **Connect the function logic to the action UI** to dynamically update the display with real-time battery data.
+
+### Expected Deliverables
+
+- Stream Deck plugin (.sdPlugin)
+- Configuration UI for polling interval and selecting which headset to monitor
+- Clear, efficient, and well-documented code
+- Proper error handling for disconnected states
+
+This spec provides all necessary details for the AI-code editor to build the plugin effectively.

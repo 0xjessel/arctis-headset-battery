@@ -1,0 +1,47 @@
+{
+	"Name": "Arctis Headset Battery",
+	"Version": "0.1.0.0",
+	"Author": "0xjessel",
+	"Actions": [
+		{
+			"Name": "Battery Level",
+			"UUID": "com.0xjessel.arctis-headset-battery.battery-level",
+			"Icon": "imgs/actions/battery/icon",
+			"Tooltip": "Display the battery level of your Arctis headset",
+			"PropertyInspectorPath": "ui/battery-level.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/battery/key",
+					"TitleAlignment": "middle"
+				}
+			]
+		}
+	],
+	"Category": "Arctis Headset Battery",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Display the battery level of your Arctis headset",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.4"
+	},
+	"OS": [
+		{
+			"Platform": "mac",
+			"MinimumVersion": "12"
+		},
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	},
+	"UUID": "com.0xjessel.arctis-headset-battery"
+}
