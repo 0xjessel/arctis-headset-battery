@@ -1,5 +1,29 @@
 import HID from 'node-hid';
 
+/**
+ * ⚠️ CRITICAL PRE-RELEASE TODO ⚠️
+ * 
+ * Battery level reporting needs to be tested at various charge levels (75%, 50%, 25%, near empty)
+ * to verify whether the Arctis 7 2019 reports battery levels as 0-100 values or uses a different scale.
+ * 
+ * Current implementation assumes 0-100 values based on testing at 100% battery level only.
+ * This assumption must be verified before release.
+ * 
+ * See README.md and PRD.mdx for more details.
+ */
+
+/**
+ * ℹ️ CHARGING DETECTION DISCOVERY ℹ️
+ * 
+ * While we couldn't reliably determine charging status from the HID response bytes,
+ * we discovered that when the headset is connected directly to the PC via USB for charging,
+ * additional USB devices appear with product ID 0x12ae and the name "SteelSeries Arctis 7 Bootloader".
+ * 
+ * This allows us to detect when the headset is charging via USB by looking for these bootloader devices.
+ * Note that this only works when the headset is charging via the PC's USB port and won't detect
+ * charging from other power sources (like wall adapters).
+ */
+
 // Set driver type to libusb
 HID.setDriverType('libusb');
 
@@ -11,12 +35,77 @@ const HEADSET_IDS = [
   [0x1038, 0x12b3]  // Arctis 1 Wireless
 ];
 
+// Product ID for the Arctis 7 Bootloader (appears when headset is connected via USB)
+const ARCTIS_7_BOOTLOADER_PRODUCT_ID = 0x12ae;
+
 // Interface for headset device information
 export interface HeadsetDevice {
   device: HID.HID;
   info: HID.Device;
   name: string;
   model: string;
+}
+
+/**
+ * Check if the headset is charging via direct USB connection
+ * This works by detecting if there are additional USB devices from SteelSeries
+ * with product ID 0x12ae and name "SteelSeries Arctis 7 Bootloader"
+ * 
+ * These bootloader devices appear when the headset is connected directly via USB for charging
+ * 
+ * Note: This only works when the headset is charging via the PC's USB port
+ * and won't detect charging from other power sources (like wall adapters)
+ * 
+ * @param verbose Whether to log detailed information
+ * @returns True if the headset appears to be charging via USB, false otherwise
+ */
+export function isHeadsetChargingViaUSB(verbose = false): boolean {
+  try {
+    // Get all HID devices
+    const devices = HID.devices();
+    
+    // Find all SteelSeries devices with the same vendor ID
+    const steelSeriesDevices = devices.filter(d => 
+      d.manufacturer && d.manufacturer.includes('SteelSeries') &&
+      d.vendorId === 0x1038
+    );
+    
+    if (verbose && steelSeriesDevices.length > 0) {
+      console.log('Found SteelSeries devices:');
+      steelSeriesDevices.forEach((device, index) => {
+        console.log(`Device ${index + 1}:`);
+        console.log(`  VendorID: 0x${device.vendorId?.toString(16)}`);
+        console.log(`  ProductID: 0x${device.productId?.toString(16)}`);
+        console.log(`  Product: ${device.product}`);
+        console.log(`  Usage: ${device.usage}`);
+        console.log(`  UsagePage: ${device.usagePage}`);
+        console.log(`  Path: ${device.path}`);
+      });
+    }
+    
+    // Look specifically for the Arctis 7 Bootloader device (product ID 0x12ae)
+    // This appears when the headset is connected directly via USB for charging
+    const bootloaderDevices = steelSeriesDevices.filter(d => 
+      d.productId === ARCTIS_7_BOOTLOADER_PRODUCT_ID && 
+      d.product && d.product.includes('Bootloader')
+    );
+    
+    if (verbose) {
+      console.log(`Found ${bootloaderDevices.length} Arctis 7 Bootloader devices`);
+    }
+    
+    // If we found any bootloader devices, the headset is charging via USB
+    const isChargingViaUSB = bootloaderDevices.length > 0;
+    
+    if (verbose) {
+      console.log(`Headset charging via USB: ${isChargingViaUSB}`);
+    }
+    
+    return isChargingViaUSB;
+  } catch (error) {
+    console.error('Error checking if headset is charging via USB:', error);
+    return false;
+  }
 }
 
 /**
@@ -171,36 +260,6 @@ export async function getBatteryLevel(headset: HeadsetDevice): Promise<number | 
 }
 
 /**
- * Check if the headset is currently charging
- * @param headset The connected headset device
- * @returns True if the headset is charging, false if not, null if it cannot be determined
- */
-export async function isCharging(headset: HeadsetDevice): Promise<boolean | null> {
-  try {
-    headset.device.write([0x06, 0x18]);
-    const response = headset.device.readTimeout(1000);
-    
-    // The response format can vary, so we need to check multiple bytes
-    if (response && response.length > 4) {
-      // First check byte 3 (index 3)
-      if (response[3] === 0 || response[3] === 1) {
-        return response[3] === 0; // 0 means charging, 1 means not charging
-      }
-      
-      // If byte 3 doesn't look like a charging indicator, check byte 4 (index 4)
-      if (response[4] === 0 || response[4] === 1) {
-        return response[4] === 0; // 0 means charging, 1 means not charging
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error checking charging status:', error);
-    return null;
-  }
-}
-
-/**
  * Get the full response from the headset
  * @param headset The connected headset device
  * @returns The full response buffer or null if it cannot be read
@@ -211,19 +270,15 @@ export async function getFullResponse(headset: HeadsetDevice): Promise<Buffer | 
     headset.device.write([0x06, 0x18]);
     const response = headset.device.readTimeout(1000);
     
-    // Response format for Arctis 7 2019 can vary:
-    // Format 1:
+    // Response format for Arctis 7 2019:
     // Byte 0-1: Echo of the command (0x06, 0x18)
     // Byte 2: Battery level (0-100)
-    // Byte 3: Charging status (0 = charging, 1 = not charging)
-    // Remaining bytes: Unknown/unused
-    //
-    // Format 2:
-    // Byte 0-1: Echo of the command (0x06, 0x18)
-    // Byte 2: Battery level (can be >100)
-    // Byte 3: Possibly max battery level (0x64 = 100)
-    // Byte 4: Charging status (0 = charging, 1 = not charging)
-    // Remaining bytes: Unknown/unused
+    //   - If 0, the headset is likely off or disconnected
+    //   - If >0, the headset is on and connected (typically around 100-102)
+    // 
+    // Note: Based on our tests, we couldn't reliably determine the charging status
+    // from the response bytes. The pattern doesn't match what we expected from other
+    // implementations.
     if (response) {
       return Buffer.from(response);
     }
@@ -252,6 +307,9 @@ export function closeHeadset(headset: HeadsetDevice): void {
  */
 async function main() {
   try {
+    // Check if the headset is charging via USB before connecting
+    const isChargingViaUSB = isHeadsetChargingViaUSB(true);
+    
     const headset = await getHeadset(true);
     
     if (!headset) {
@@ -260,34 +318,28 @@ async function main() {
     }
     
     const batteryLevel = await getBatteryLevel(headset);
-    const charging = await isCharging(headset);
     const fullResponse = await getFullResponse(headset);
     
     console.log(`Headset: ${headset.name} (${headset.model})`);
-    console.log(`Battery Level: ${batteryLevel !== null ? `${batteryLevel}%` : 'Unknown'}`);
-    console.log(`Charging: ${charging !== null ? (charging ? 'Yes' : 'No') : 'Unknown'}`);
+    
+    if (batteryLevel === 0) {
+      console.log('Battery Level: Unknown (headset may be off or disconnected)');
+    } else if (batteryLevel !== null) {
+      console.log(`Battery Level: ${batteryLevel}%`);
+    } else {
+      console.log('Battery Level: Unknown');
+    }
+    
+    // Display charging status based on USB detection
+    console.log(`Charging via USB: ${isChargingViaUSB ? 'Yes' : 'No'} (detected by USB device presence)`);
     
     if (fullResponse) {
       console.log('Full response:', fullResponse);
       
-      // Check all bytes for potential charging indicators
+      // Check all bytes for analysis
       console.log('\nDetailed response analysis:');
       for (let i = 0; i < fullResponse.length; i++) {
         console.log(`Byte ${i}: ${fullResponse[i]} (0x${fullResponse[i].toString(16).padStart(2, '0')})`);
-      }
-      
-      // Check if any byte is 1, which might indicate charging
-      const potentialChargingBytes = [];
-      for (let i = 0; i < fullResponse.length; i++) {
-        if (fullResponse[i] === 1) {
-          potentialChargingBytes.push(i);
-        }
-      }
-      
-      if (potentialChargingBytes.length > 0) {
-        console.log(`\nPotential charging indicators found at byte(s): ${potentialChargingBytes.join(', ')}`);
-      } else {
-        console.log('\nNo potential charging indicators found (no bytes with value 1)');
       }
     }
     

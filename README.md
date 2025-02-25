@@ -4,8 +4,7 @@ A Stream Deck plugin that displays the battery level of your SteelSeries Arctis 
 
 ## Features
 
-- Displays battery percentage (25%, 50%, 75%, 100%)
-- Shows charging status with a lightning bolt icon (⚡)
+- Displays battery percentage (0-100%)
 - Configurable polling interval
 - Visual alert when headset is disconnected
 
@@ -60,7 +59,7 @@ This will:
 1. Scan for compatible SteelSeries headsets
 2. Display detailed information about all detected devices
 3. Connect to the appropriate interface
-4. Read and display the battery level and charging status
+4. Read and display the battery level
 
 Example output:
 
@@ -81,7 +80,6 @@ Device 2:
 Successfully connected to Arctis 7 (Arctis 7 2019)
 Headset: Arctis 7 (Arctis 7 2019)
 Battery Level: 100%
-Charging: No
 ```
 
 ## Contributing
@@ -96,25 +94,13 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ### Headset Communication Protocol
 
-The plugin communicates with the headset using the HID (Human Interface Device) protocol. Here's how the battery and charging status are read:
+The plugin communicates with the headset using the HID (Human Interface Device) protocol. Here's how the battery level is read:
 
 1. **Command**: Send `[0x06, 0x18]` to the headset
-2. **Response**: The headset returns a multi-byte response with varying formats:
-
-   **Format 1:**
-
+2. **Response**: The headset returns a multi-byte response:
    - Bytes 0-1: Echo of the command (`0x06, 0x18`)
    - Byte 2: Battery level (0-100, sometimes >100)
-   - Byte 3: Charging status (0 = charging, 1 = not charging)
-   - Remaining bytes: Unknown/unused
-
-   **Format 2:**
-
-   - Bytes 0-1: Echo of the command (`0x06, 0x18`)
-   - Byte 2: Battery level (can be >100)
-   - Byte 3: Possibly max battery level (0x64 = 100)
-   - Byte 4: Charging status (0 = charging, 1 = not charging)
-   - Remaining bytes: Unknown/unused
+   - Remaining bytes: Various status information
 
 ### Finding the Correct Interface
 
@@ -125,17 +111,51 @@ Not all HID interfaces on the headset support battery status reading. The plugin
 
 This has been verified to work with the Arctis 7 2019 model, but may vary for other models.
 
-### Charging Status
-
-For the Arctis 7 2019 model, the charging status is indicated by either byte 3 or byte 4 of the response:
-
-- `0` means the headset IS charging
-- `1` means the headset is NOT charging
-
-The response format can vary between connections, so the plugin checks both byte positions.
-
-**Important Note**: We've observed that the charging status is inverted from what might be expected - when the headset is plugged in, it shows as NOT charging, and when unplugged, it shows as charging. This behavior has been verified through testing and is correctly handled in the code.
-
 ### Battery Level
 
 The battery level is reported in byte 2 and can sometimes exceed 100%. The plugin caps the reported value at 100% for consistency.
+
+**Note on Battery Level Testing**: Our testing has primarily been conducted with the headset at or near 100% battery level. We haven't yet verified how the battery level is reported across the entire range (0-100%). It's possible that the Arctis 7 2019 might use a different scale (such as the 0-4 range mentioned in the [aarol.dev blog](https://aarol.dev/posts/arctis-hid/) for the Arctis Nova 7) when the battery is at lower levels. Further testing with partially discharged batteries would be needed to confirm the full behavior.
+
+**TODO**: Test the headset at various battery levels (75%, 50%, 25%, near empty) to verify whether the Arctis 7 2019 reports battery levels as 0-100 values or uses a different scale. Update the implementation if necessary based on findings.
+
+### Charging Status Detection
+
+After extensive testing, we've discovered a reliable method to detect when the headset is charging via USB connected to the PC:
+
+1. When the Arctis 7 2019 headset is connected directly to the PC via USB for charging, additional USB devices appear with:
+
+   - Product ID: `0x12ae`
+   - Product Name: `SteelSeries Arctis 7 Bootloader`
+   - Vendor ID: `0x1038`
+
+2. By detecting the presence of these bootloader devices, we can determine if the headset is currently charging via the PC's USB port.
+
+3. **Limitations**:
+
+   - This method only works when the headset is charging via the PC's USB port
+   - It won't detect charging from other power sources (like wall adapters or power banks)
+   - It requires the headset to be directly connected to the PC, not through a USB hub
+
+4. **Advantages**:
+   - This is more reliable than trying to interpret the HID response bytes
+   - It provides a clear binary indication (charging/not charging) without ambiguity
+   - It works regardless of whether the headset is turned on or off
+
+This approach was developed after we found that the HID response bytes did not provide consistent charging status information.
+
+### Note on HID Response Charging Status Detection
+
+**Important**: Our initial attempts to determine charging status from the HID response bytes were unsuccessful for the Arctis 7 2019 model.
+
+Our testing revealed:
+
+1. The response bytes do not consistently indicate charging status in a way that matches expected patterns from other implementations.
+
+2. When testing with the headset plugged in and turned on vs. unplugged and turned on, we observed inconsistent values in bytes that were expected to indicate charging status.
+
+3. Different tests with the same physical state (plugged in or unplugged) produced different values in the response bytes.
+
+4. No single byte in the response reliably indicated the charging state across multiple tests.
+
+5. Our findings differ significantly from those described in [this blog post](https://aarol.dev/posts/arctis-hid/) about the Arctis Nova 7 model. The blog describes a consistent pattern for charging status in byte 3, but our tests with the Arctis 7 2019 showed inconsistent values that did not follow the described pattern.

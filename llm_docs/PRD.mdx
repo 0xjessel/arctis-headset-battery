@@ -4,15 +4,13 @@
 
 This plugin will display the battery level of an Arctis wireless headset on an Elgato Stream Deck key. It will poll for the battery status every 30 seconds (configurable) and support the following battery states:
 
-- **Battery Levels:** 25%, 50%, 75%, 100%
-- **Charging Status:** Charging indicator when applicable
+- **Battery Levels:** 0-100%
 - **Disconnected State:** Detect when the headset is not connected
 
 ### UI Design
 
 - **Primary Icon:** Headphone icon
 - **Battery Percentage:** Centered text below the icon
-- **Charging Indicator:** Lightning emoji (⚡) next to the percentage if charging
 
 ### Data Source
 
@@ -24,7 +22,20 @@ Fetching battery state is non-trivial and requires reverse engineering similar p
 4. [Arctis Battery Percentage](https://github.com/YourM4jesty/ArctisBatteryPercentage)
 5. [Arctis USB Finder](https://github.com/richrace/arctis-usb-finder)
 
-Based on [this blog post](https://aarol.dev/posts/arctis-hid/), the battery status is limited to four levels (25%, 50%, 75%, 100%) and includes charging and disconnection detection.
+Based on [this blog post](https://aarol.dev/posts/arctis-hid/), the battery status is limited to four levels (25%, 50%, 75%, 100%) and includes disconnection detection.
+
+**Important Note on Discrepancies with Referenced Blog Post:**
+While the blog post at [aarol.dev](https://aarol.dev/posts/arctis-hid/) provided valuable insights, our testing revealed significant differences between the described behavior and our observations with the Arctis 7 2019 model:
+
+1. The blog post describes using command bytes `[0x00, 0xb0]` for the Arctis Nova 7, while our implementation uses `[0x06, 0x18]` for the Arctis 7 2019.
+
+2. According to the blog, "the charging status will be `0` when not connected, `1` when charging and `3` when discharging." However, our testing with the Arctis 7 2019 showed inconsistent values in byte 3 that did not follow this pattern.
+
+3. The blog mentions that "the headset only sends the battery status in the range [0-4], with 4 being 100% charge," whereas our Arctis 7 2019 reports battery levels from 0-100 directly.
+
+4. Our response data showed values in byte 3 (such as 65 or 0x65) that don't match any of the expected values mentioned in the blog post.
+
+These discrepancies highlight the differences between headset models and underscore why we couldn't reliably determine charging status for our specific model.
 
 ### Technical Findings: USB HID Communication Protocol
 
@@ -57,22 +68,10 @@ After extensive testing and reverse engineering, we've documented the following 
 - **Response Format:**
 
   - The headset returns a multi-byte response
-  - We've identified two distinct response formats:
-
-  **Format 1:**
-
-  - Bytes 0-1: Echo of the command (`0x06, 0x18`)
-  - Byte 2: Battery level (0-100, sometimes >100)
-  - Byte 3: Charging status (0 = charging, 1 = not charging)
-  - Remaining bytes: Unknown/unused
-
-  **Format 2:**
-
-  - Bytes 0-1: Echo of the command (`0x06, 0x18`)
-  - Byte 2: Battery level (can be >100)
-  - Byte 3: Possibly max battery level (0x64 = 100)
-  - Byte 4: Charging status (0 = charging, 1 = not charging)
-  - Remaining bytes: Unknown/unused
+  - The basic response format is:
+    - Bytes 0-1: Echo of the command (`0x06, 0x18`)
+    - Byte 2: Battery level (0-100, sometimes >100)
+    - Remaining bytes: Various status information that varies between models and firmware versions
 
 #### Battery Level Interpretation
 
@@ -84,28 +83,63 @@ After extensive testing and reverse engineering, we've documented the following 
   - For consistency, we cap the reported value at 100%
 
 - **Accuracy:**
+
   - The battery level appears to be reported in increments of 1%
   - This is more granular than the 25% increments mentioned in some documentation
-  - The Stream Deck UI can be designed to show either precise percentages or simplified levels (25%, 50%, 75%, 100%)
+  - The Stream Deck UI can be designed to show precise percentages
 
-#### Charging Status Interpretation
+- **Testing Limitations:**
+  - Our testing has primarily been conducted with the headset at or near 100% battery level
+  - We haven't yet verified how the battery level is reported across the entire range (0-100%)
+  - It's possible that the Arctis 7 2019 might use a different scale (such as the 0-4 range mentioned in the blog post for the Arctis Nova 7) when the battery is at lower levels
+  - Further testing with partially discharged batteries would be needed to confirm the full behavior of the battery level reporting
 
-- **Byte Position:**
+**TODO**: Test the headset at various battery levels (75%, 50%, 25%, near empty) to verify whether the Arctis 7 2019 reports battery levels as 0-100 values or uses a different scale. Update the implementation if necessary based on findings.
 
-  - Charging status can be in byte 3 or byte 4, depending on the response format
-  - Our code checks both positions to handle format variations
+#### Charging Status Detection Issues
 
-- **Value Interpretation:**
+After extensive testing with the Arctis 7 2019 model, we've concluded that reliable charging status detection is not possible using the HID response alone. Here's what we found:
 
-  - `0` means the headset IS charging
-  - `1` means the headset is NOT charging
-  - This is counter-intuitive but has been verified through extensive testing
+- **Inconsistent Response Patterns:**
 
-- **Unexpected Behavior:**
-  - We've observed that the charging status is inverted from what might be expected
-  - When the headset is physically plugged in, it often shows as NOT charging
-  - When unplugged, it may show as charging
-  - This behavior has been verified and is handled correctly in our code
+  - The response bytes do not consistently indicate charging status in a way that matches expected patterns from other implementations
+  - When testing with the headset in identical physical states (plugged in or unplugged), we observed different values in the response bytes
+
+- **Failed Approaches:**
+
+  - We attempted to use byte 3 as a charging indicator (as suggested by some implementations)
+  - We also tried byte 4 as an alternative charging indicator
+  - We looked for patterns in other bytes (checking for values of 0, 1, or 3)
+  - None of these approaches provided consistent results across multiple tests
+
+- **Test Results:**
+
+  - Test 1: Headset plugged in and turned on - inconsistent charging indicators
+  - Test 2: Headset not plugged in but turned on - inconsistent charging indicators
+  - Test 3: Repeat of Test 1 with same physical setup - different response values
+  - Test 4: Headset turned off - consistent battery level of 0, but no reliable charging indicators
+
+- **Alternative Solution - USB Device Detection:**
+
+  - We discovered a reliable method to detect when the headset is charging via USB connected to the PC
+  - When the Arctis 7 2019 headset is connected directly to the PC via USB for charging, additional USB devices appear with:
+    - Product ID: `0x12ae`
+    - Product Name: `SteelSeries Arctis 7 Bootloader`
+    - Vendor ID: `0x1038`
+  - By detecting the presence of these bootloader devices, we can determine if the headset is currently charging via the PC's USB port
+  - Limitations:
+    - This method only works when the headset is charging via the PC's USB port
+    - It won't detect charging from other power sources (like wall adapters)
+    - It requires the headset to be directly connected to the PC, not through a USB hub
+  - Advantages:
+    - This is more reliable than trying to interpret the HID response bytes
+    - It provides a clear binary indication (charging/not charging) without ambiguity
+    - It works regardless of whether the headset is turned on or off
+
+- **Conclusion:**
+  - For the Arctis 7 2019 model, charging status cannot be reliably determined from the HID response
+  - The USB device detection method provides a partial solution for detecting charging via PC USB
+  - For charging from other power sources, external methods (such as user input or monitoring battery level changes over time) would be needed
 
 #### Implementation Considerations
 
@@ -131,7 +165,7 @@ After extensive testing and reverse engineering, we've documented the following 
   - Our implementation has been cross-validated with other open-source projects
   - The command structure (`[0x06, 0x18]`) is consistent across implementations
   - The interpretation of byte 2 as battery level is consistent
-  - The charging status interpretation varies between implementations, likely due to the counter-intuitive behavior
+  - The charging status interpretation varies between implementations, likely due to inconsistencies in the headset's response
 
 #### Model-Specific Considerations
 
@@ -140,14 +174,15 @@ After extensive testing and reverse engineering, we've documented the following 
   - Product ID: `0x12ad`
   - Vendor ID: `0x1038`
   - Correct interface has Usage: `514` and UsagePage: `65347`
-  - Both response formats have been observed
+  - Battery level reporting is reliable
+  - Charging status detection is unreliable
 
 - **Other Models:**
   - While our code supports other models (Arctis 7 2017, Arctis Pro, Arctis 1 Wireless)
   - These have not been verified and may have different response formats
   - Additional testing is needed to confirm behavior across all models
 
-This comprehensive understanding of the USB HID protocol for SteelSeries Arctis headsets enables reliable battery monitoring and charging status detection, which forms the foundation of our Stream Deck plugin.
+This comprehensive understanding of the USB HID protocol for SteelSeries Arctis headsets enables reliable battery monitoring, which forms the foundation of our Stream Deck plugin.
 
 ### Plugin Functionality
 
@@ -189,7 +224,6 @@ This comprehensive understanding of the USB HID protocol for SteelSeries Arctis 
   - **Format the UI Elements:**
     - Display the headphone icon as the primary visual element.
     - Show the battery percentage centered below the icon.
-    - If charging, append a lightning emoji (⚡) next to the percentage.
   - Poll for this data every 30 seconds by default (configurable by the user)
 
 * **Configuration:**
@@ -206,9 +240,9 @@ This comprehensive understanding of the USB HID protocol for SteelSeries Arctis 
 
 (Agent should check in with the user at each milestone for feedback and progress confirmation.)
 
-1. **Create a function that can connect to the SteelSeries headset and extract the battery % and whether it's charging.**
+1. **Create a function that can connect to the SteelSeries headset and extract the battery %.**
 
-2. **Create a dummy Stream Deck action** ([reference](https://docs.elgato.com/streamdeck/sdk/guides/actions)) with a text input for the battery % and toggle icon visibility based on whether it's charging or not.
+2. **Create a dummy Stream Deck action** ([reference](https://docs.elgato.com/streamdeck/sdk/guides/actions)) with a text input for the battery %.
 
 3. **Connect the function logic to the action UI** to dynamically update the display with real-time battery data.
 
