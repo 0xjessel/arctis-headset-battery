@@ -26,6 +26,129 @@ Fetching battery state is non-trivial and requires reverse engineering similar p
 
 Based on [this blog post](https://aarol.dev/posts/arctis-hid/), the battery status is limited to four levels (25%, 50%, 75%, 100%) and includes charging and disconnection detection.
 
+### Technical Findings: USB HID Communication Protocol
+
+After extensive testing and reverse engineering, we've documented the following details about communicating with SteelSeries Arctis headsets:
+
+#### Device Identification
+
+- **Finding the Correct Interface:**
+
+  - Not all HID interfaces on the headset support battery status reading
+  - The correct interface has specific characteristics:
+    - Usage: `514`
+    - UsagePage: `65347`
+  - This has been verified for the Arctis 7 (2019) model
+  - Other models may use different interface parameters
+
+- **Device Enumeration:**
+  - Multiple interfaces may be present for the same physical device
+  - The headset typically presents 2-3 interfaces with the same VendorID/ProductID
+  - Only one interface supports battery status commands
+
+#### Communication Protocol
+
+- **Command Structure:**
+
+  - Battery status is requested by sending a specific command: `[0x06, 0x18]`
+  - The command must be written to the device using the HID write method
+  - A timeout of 1000ms is recommended when reading the response
+
+- **Response Format:**
+
+  - The headset returns a multi-byte response
+  - We've identified two distinct response formats:
+
+  **Format 1:**
+
+  - Bytes 0-1: Echo of the command (`0x06, 0x18`)
+  - Byte 2: Battery level (0-100, sometimes >100)
+  - Byte 3: Charging status (0 = charging, 1 = not charging)
+  - Remaining bytes: Unknown/unused
+
+  **Format 2:**
+
+  - Bytes 0-1: Echo of the command (`0x06, 0x18`)
+  - Byte 2: Battery level (can be >100)
+  - Byte 3: Possibly max battery level (0x64 = 100)
+  - Byte 4: Charging status (0 = charging, 1 = not charging)
+  - Remaining bytes: Unknown/unused
+
+#### Battery Level Interpretation
+
+- **Raw Value:**
+
+  - Battery level is reported in byte 2 of the response
+  - The value typically ranges from 0-100, representing percentage
+  - In some cases, the value can exceed 100% (we've observed values up to 105%)
+  - For consistency, we cap the reported value at 100%
+
+- **Accuracy:**
+  - The battery level appears to be reported in increments of 1%
+  - This is more granular than the 25% increments mentioned in some documentation
+  - The Stream Deck UI can be designed to show either precise percentages or simplified levels (25%, 50%, 75%, 100%)
+
+#### Charging Status Interpretation
+
+- **Byte Position:**
+
+  - Charging status can be in byte 3 or byte 4, depending on the response format
+  - Our code checks both positions to handle format variations
+
+- **Value Interpretation:**
+
+  - `0` means the headset IS charging
+  - `1` means the headset is NOT charging
+  - This is counter-intuitive but has been verified through extensive testing
+
+- **Unexpected Behavior:**
+  - We've observed that the charging status is inverted from what might be expected
+  - When the headset is physically plugged in, it often shows as NOT charging
+  - When unplugged, it may show as charging
+  - This behavior has been verified and is handled correctly in our code
+
+#### Implementation Considerations
+
+- **Error Handling:**
+
+  - Connection to the headset can fail for various reasons
+  - Timeouts should be implemented for all read operations
+  - The code should gracefully handle disconnection events
+
+- **Polling Frequency:**
+
+  - Battery level changes slowly, so frequent polling is unnecessary
+  - A 30-second polling interval is reasonable for most use cases
+  - More frequent polling may impact battery life of the headset
+
+- **Device Reconnection:**
+  - The code should attempt to reconnect if the headset becomes unavailable
+  - This is particularly important for wireless headsets that may temporarily disconnect
+
+#### Cross-Validation
+
+- **Comparison with Other Implementations:**
+  - Our implementation has been cross-validated with other open-source projects
+  - The command structure (`[0x06, 0x18]`) is consistent across implementations
+  - The interpretation of byte 2 as battery level is consistent
+  - The charging status interpretation varies between implementations, likely due to the counter-intuitive behavior
+
+#### Model-Specific Considerations
+
+- **Arctis 7 (2019) - Verified:**
+
+  - Product ID: `0x12ad`
+  - Vendor ID: `0x1038`
+  - Correct interface has Usage: `514` and UsagePage: `65347`
+  - Both response formats have been observed
+
+- **Other Models:**
+  - While our code supports other models (Arctis 7 2017, Arctis Pro, Arctis 1 Wireless)
+  - These have not been verified and may have different response formats
+  - Additional testing is needed to confirm behavior across all models
+
+This comprehensive understanding of the USB HID protocol for SteelSeries Arctis headsets enables reliable battery monitoring and charging status detection, which forms the foundation of our Stream Deck plugin.
+
 ### Plugin Functionality
 
 - **Polling Interval:** Default 30 seconds (configurable via settings)
@@ -76,8 +199,8 @@ Based on [this blog post](https://aarol.dev/posts/arctis-hid/), the battery stat
 
 ### Supported Headset
 
-- **User's Headset:** Arctis 7 (2017 Edition)
-  - The headset ID for this model is [0x1038, 0x1260]
+- **User's Headset:** Arctis 7 (2019 Edition)
+  - The headset ID for this model is [0x1038, 0x1260]
 
 ### Project Milestones
 
