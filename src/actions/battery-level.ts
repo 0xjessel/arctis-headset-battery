@@ -8,9 +8,38 @@ import {
   action
 } from '@elgato/streamdeck';
 import HID from 'node-hid';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { createRequire } from 'module';
+
+// Create a require function
+const require = createRequire(import.meta.url);
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Set driver type to libusb
 HID.setDriverType('libusb');
+
+// Try to initialize HID early to catch any startup errors
+try {
+  streamDeck.logger.debug('Testing HID initialization...', {
+    __dirname,
+    import_meta_url: import.meta.url
+  });
+  
+  // Force node-hid to load with require
+  const nodeHid = require('node-hid');
+  const testDevices = nodeHid.devices();
+  streamDeck.logger.debug('HID initialization successful', { deviceCount: testDevices.length });
+} catch (error) {
+  streamDeck.logger.error('Error initializing HID:', { 
+    error,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  });
+}
 
 interface BatteryState {
   percentage: number | null;
@@ -45,11 +74,14 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
   };
 
   private currentDevice?: HID.HID;
+  private lastEvent?: WillAppearEvent<Settings>;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     streamDeck.logger.info('Action appearing', {
       settings: ev.payload.settings
     });
+    // Store the event for later use
+    this.lastEvent = ev;
     // Start polling when the action becomes visible
     this.startPolling(ev.payload.settings);
     await this.updateUI(ev);
@@ -57,6 +89,7 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
   override async onWillDisappear(_ev: WillDisappearEvent<Settings>): Promise<void> {
     streamDeck.logger.info('Action disappearing');
+    this.lastEvent = undefined;
     // Stop polling when the action is no longer visible
     this.stopPolling();
     // Close any open device connection
@@ -88,8 +121,19 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
   private async updateBatteryStatus() {
     try {
-      streamDeck.logger.debug('Scanning for HID devices...');
-      const devices = HID.devices();
+      let devices: HID.Device[];
+      
+      try {
+        const nodeHid = require('node-hid');
+        devices = nodeHid.devices();
+      } catch (error) {
+        streamDeck.logger.error('Error calling HID.devices():', { 
+          error,
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        });
+        throw error;
+      }
       
       // Find SteelSeries devices
       const steelSeriesDevices = devices.filter(d => 
@@ -114,8 +158,20 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
       if (knownWorkingDevice && knownWorkingDevice.path) {
         try {
-          connectedDevice = new HID.HID(knownWorkingDevice.path);
-          deviceInfo = knownWorkingDevice;
+          // Use require'd version of node-hid for consistency
+          const nodeHid = require('node-hid');
+          
+          try {
+            connectedDevice = new nodeHid.HID(knownWorkingDevice.path);
+            deviceInfo = knownWorkingDevice;
+          } catch (connectError) {
+            streamDeck.logger.error('Error creating HID device:', { 
+              error: connectError,
+              message: connectError instanceof Error ? connectError.message : String(connectError),
+              stack: connectError instanceof Error ? connectError.stack : undefined
+            });
+            throw connectError;
+          }
           
           // Determine model
           if (deviceInfo.vendorId === 0x1038) {
@@ -124,8 +180,13 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
             else if (deviceInfo.productId === 0x1294) model = 'Arctis Pro';
             else if (deviceInfo.productId === 0x12b3) model = 'Arctis 1 Wireless';
           }
+          streamDeck.logger.info('Connected to headset', { model });
         } catch (error) {
-          streamDeck.logger.error('Error connecting to known working device:', error);
+          streamDeck.logger.error('Error connecting to known working device:', { 
+            error,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+          });
         }
       }
 
@@ -135,9 +196,9 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
           if (!device.path) continue;
 
           try {
-            const tempDevice = new HID.HID(device.path);
+            const nodeHid = require('node-hid');
+            const tempDevice = new nodeHid.HID(device.path);
             
-            // Try to get battery level to verify this is the correct interface
             try {
               tempDevice.write([0x06, 0x18]);
               const response = tempDevice.readTimeout(1000);
@@ -153,16 +214,17 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
                   else if (device.productId === 0x1294) model = 'Arctis Pro';
                   else if (device.productId === 0x12b3) model = 'Arctis 1 Wireless';
                 }
+                streamDeck.logger.info('Connected to headset', { model });
                 break;
               }
-            } catch {
+            } catch (error) {
               tempDevice.close();
               continue;
             }
             
             tempDevice.close();
-          } catch {
-            // Silently continue to the next device
+          } catch (error) {
+            // Silently continue to next device
           }
         }
       }
@@ -195,34 +257,44 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
           model
         };
 
-        streamDeck.logger.debug('Updated state', { state: this.currentState });
-        await this.updateUI();
+        streamDeck.logger.debug('Battery status', { 
+          percentage: this.currentState.percentage,
+          isCharging: this.currentState.isCharging,
+          model: this.currentState.model
+        });
+        
+        await this.updateUI(this.lastEvent);
       } catch (error) {
-        streamDeck.logger.error('Error reading battery level:', error);
+        streamDeck.logger.error('Error reading battery level:', { error });
         this.updateDisconnectedState();
       }
     } catch (error) {
-      streamDeck.logger.error('Error updating battery status:', error);
+      streamDeck.logger.error('Error updating battery status:', { error });
       this.updateDisconnectedState();
     }
   }
 
   private isHeadsetChargingViaUSB(): boolean {
     try {
-      const devices = HID.devices();
-      const steelSeriesDevices = devices.filter(d => 
+      const nodeHid = require('node-hid');
+      const devices = nodeHid.devices();
+      const steelSeriesDevices = devices.filter((d: HID.Device) => 
         d.manufacturer && d.manufacturer.includes('SteelSeries') &&
         d.vendorId === 0x1038
       );
       
-      const bootloaderDevices = steelSeriesDevices.filter(d => 
+      const bootloaderDevices = steelSeriesDevices.filter((d: HID.Device) => 
         d.productId === ARCTIS_7_BOOTLOADER_PRODUCT_ID && 
         d.product && d.product.includes('Bootloader')
       );
       
       return bootloaderDevices.length > 0;
     } catch (error) {
-      streamDeck.logger.error('Error checking if headset is charging via USB:', error);
+      streamDeck.logger.error('Error checking if headset is charging via USB:', { 
+        error,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return false;
     }
   }
@@ -234,7 +306,7 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
       isConnected: false,
       model: undefined
     };
-    this.updateUI();
+    this.updateUI(this.lastEvent);
   }
 
   private async updateUI(ev?: WillAppearEvent<Settings>) {
@@ -244,7 +316,7 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
     }
 
     if (!this.currentState.isConnected) {
-      streamDeck.logger.info('Headset disconnected, showing alert');
+      streamDeck.logger.info('Headset disconnected');
       await ev.action.showAlert();
       await ev.action.setTitle('Disconnected');
       return;
@@ -252,7 +324,6 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
     const modelPrefix = this.currentState.model ? `${this.currentState.model}\n` : '';
     const title = `${modelPrefix}${this.currentState.percentage}%${this.currentState.isCharging ? ' ⚡' : ''}`;
-    streamDeck.logger.debug('Updating UI', { title });
     await ev.action.setTitle(title);
   }
 } 
