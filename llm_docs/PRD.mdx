@@ -231,10 +231,56 @@ This comprehensive understanding of the USB HID protocol for SteelSeries Arctis 
   - User can set polling frequency
   - User can select which headset battery to monitor
 
-### Supported Headset
+### Implementation Learnings
 
-- **User's Headset:** Arctis 7 (2019 Edition)
-  - The headset ID for this model is [0x1038, 0x1260]
+#### Porting Challenges from `read-battery.ts` to `battery-level.ts`
+
+During the implementation of the Stream Deck plugin, we encountered several challenges when porting the working code from the standalone script (`read-battery.ts`) to the plugin action (`battery-level.ts`):
+
+1. **ES Modules vs CommonJS**
+
+   - The Stream Deck SDK uses ES modules, while `node-hid` is a CommonJS module
+   - Solution: Used `createRequire` from `module` to load `node-hid` in CommonJS mode
+   - Required careful handling of `__dirname` and path resolution in ES modules context
+
+2. **HID Device Initialization**
+
+   - Early HID initialization testing was crucial to catch startup errors
+   - Added comprehensive error logging for HID initialization failures
+   - Implemented graceful fallbacks when device connections fail
+
+3. **Charging Detection Consistency**
+
+   - Initially tried to port the charging detection logic directly
+   - Discovered that using `HID.devices()` directly caused inconsistencies
+   - Solution: Used the require'd version of `node-hid` consistently throughout the code
+   - Maintained the bootloader device detection method from `read-battery.ts`
+
+4. **Type Safety Challenges**
+
+   - Stream Deck SDK required stricter type checking
+   - Added proper type information for HID.Device parameters
+   - Enhanced error handling with TypeScript-friendly error objects
+
+5. **Logging Strategy**
+
+   - Started with verbose logging from `read-battery.ts`
+   - Refined to keep only essential logs for production use
+   - Focused on critical events: initialization, connection, battery status, and errors
+   - Removed verbose device enumeration and raw data logs
+
+6. **State Management**
+
+   - Added proper cleanup of device connections on action disappear
+   - Implemented careful handling of device reconnection scenarios
+   - Maintained consistent UI updates based on connection state
+
+7. **Error Recovery**
+   - Enhanced error handling for device connection failures
+   - Added automatic retry logic for device enumeration
+   - Improved user feedback through Stream Deck UI alerts
+
+These learnings helped create a more robust and maintainable implementation while preserving the core functionality of the original script.
 
 ### Project Milestones
 
