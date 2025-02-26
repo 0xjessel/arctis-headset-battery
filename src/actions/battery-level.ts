@@ -9,36 +9,42 @@ import {
 } from '@elgato/streamdeck';
 import HID from 'node-hid';
 
+// Set driver type to libusb
+HID.setDriverType('libusb');
+
 interface BatteryState {
-  percentage: 25 | 50 | 75 | 100 | null;
+  percentage: number | null;
   isCharging: boolean;
   isConnected: boolean;
+  model?: string;
 }
 
 interface Settings extends JsonObject {
   pollingInterval: number; // in seconds
 }
 
+// List of supported headsets [vendorId, productId]
+const HEADSET_IDS = [
+  [0x1038, 0x12ad], // Arctis 7 2019
+  [0x1038, 0x1260], // Arctis 7 2017
+  [0x1038, 0x1294], // Arctis Pro
+  [0x1038, 0x12b3]  // Arctis 1 Wireless
+];
+
+// Product ID for the Arctis 7 Bootloader (appears when headset is connected via USB)
+const ARCTIS_7_BOOTLOADER_PRODUCT_ID = 0x12ae;
+
 @action({ UUID: 'com.0xjessel.arctis-headset-battery.battery-level' })
 export class BatteryLevelAction extends SingletonAction<Settings> {
-  
   private pollingInterval?: NodeJS.Timeout;
   private currentState: BatteryState = {
     percentage: null,
     isCharging: false,
     isConnected: false,
+    model: undefined
   };
 
-  // Arctis 7 (2017 Edition) USB identifiers
-  private static readonly VENDOR_ID = 0x1038;
-  private static readonly PRODUCT_ID = 0x1260;
-
-  // Battery status command and response constants
-  private static readonly BATTERY_STATUS_COMMAND = [0x06, 0x18];
-  private static readonly RESPONSE_LENGTH = 31;
-  private static readonly BATTERY_LEVEL_BYTE = 2;
-  private static readonly CHARGING_STATUS_BYTE = 4;
-  private static readonly CHARGING_STATUS_MASK = 0x10;
+  private currentDevice?: HID.HID;
 
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     streamDeck.logger.info('Action appearing', {
@@ -53,6 +59,15 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
     streamDeck.logger.info('Action disappearing');
     // Stop polling when the action is no longer visible
     this.stopPolling();
+    // Close any open device connection
+    if (this.currentDevice) {
+      try {
+        this.currentDevice.close();
+        this.currentDevice = undefined;
+      } catch (error) {
+        streamDeck.logger.error('Error closing device', { error });
+      }
+    }
   }
 
   private startPolling(settings?: Settings) {
@@ -71,114 +86,155 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
     }
   }
 
-  /**
-   * Convert raw battery level to percentage
-   * The Arctis 7 only reports battery levels in 25% increments
-   */
-  private static convertBatteryLevel(rawLevel: number): 25 | 50 | 75 | 100 | null {
-    streamDeck.logger.trace('Converting battery level', {
-      raw: `0x${rawLevel.toString(16)}`
-    });
-    if (rawLevel >= 0x64) return 100;
-    if (rawLevel >= 0x4B) return 75;
-    if (rawLevel >= 0x32) return 50;
-    if (rawLevel >= 0x19) return 25;
-    return null;
-  }
-
   private async updateBatteryStatus() {
-    let device: HID.HID | undefined;
-    
     try {
       streamDeck.logger.debug('Scanning for HID devices...');
       const devices = HID.devices();
-      streamDeck.logger.trace('Found HID devices', {
-        devices: devices.map(d => ({
-          vendorId: d.vendorId?.toString(16),
-          productId: d.productId?.toString(16),
-          manufacturer: d.manufacturer,
-          product: d.product
-        }))
-      });
-
-      const headset = devices.find(
-        (device) =>
-          device.vendorId === BatteryLevelAction.VENDOR_ID &&
-          device.productId === BatteryLevelAction.PRODUCT_ID
+      
+      // Find SteelSeries devices
+      const steelSeriesDevices = devices.filter(d => 
+        d.manufacturer && d.manufacturer.includes('SteelSeries') &&
+        HEADSET_IDS.some(id => d.vendorId === id[0] && d.productId === id[1])
       );
 
-      if (!headset || !headset.path) {
-        streamDeck.logger.info('No compatible headset found');
-        this.currentState = {
-          percentage: null,
-          isCharging: false,
-          isConnected: false,
-        };
-        await this.updateUI();
+      if (steelSeriesDevices.length === 0) {
+        streamDeck.logger.info('No supported SteelSeries headset found');
+        this.updateDisconnectedState();
         return;
       }
 
-      streamDeck.logger.debug('Found compatible headset', {
-        path: headset.path,
-        manufacturer: headset.manufacturer,
-        product: headset.product
-      });
+      // First try to find the specific interface we know works (Usage: 514, UsagePage: 65347)
+      const knownWorkingDevice = steelSeriesDevices.find(d => 
+        d.usage === 514 && d.usagePage === 65347
+      );
 
-      device = new HID.HID(headset.path);
-      streamDeck.logger.debug('Successfully opened HID device');
-      
-      // Request battery status
-      streamDeck.logger.trace('Sending battery status command', {
-        command: BatteryLevelAction.BATTERY_STATUS_COMMAND
-      });
-      device.write(BatteryLevelAction.BATTERY_STATUS_COMMAND);
-      
-      // Read response with timeout
-      streamDeck.logger.trace('Reading response...');
-      const response = device.readTimeout(1000);
-      streamDeck.logger.trace('Raw response', { response });
-      
-      if (!response || response.length < BatteryLevelAction.RESPONSE_LENGTH) {
-        throw new Error(`Invalid response from headset: length=${response?.length ?? 0}, expected=${BatteryLevelAction.RESPONSE_LENGTH}`);
-      }
+      let connectedDevice: HID.HID | undefined;
+      let deviceInfo: HID.Device | undefined;
+      let model = 'Unknown';
 
-      // Extract battery level and charging status
-      const rawBatteryLevel = response[BatteryLevelAction.BATTERY_LEVEL_BYTE];
-      const chargingStatus = response[BatteryLevelAction.CHARGING_STATUS_BYTE];
-      
-      streamDeck.logger.debug('Parsed response', {
-        rawBatteryLevel: `0x${rawBatteryLevel.toString(16)}`,
-        chargingStatus: `0x${chargingStatus.toString(16)}`,
-        chargingBit: (chargingStatus & BatteryLevelAction.CHARGING_STATUS_MASK) !== 0
-      });
-
-      this.currentState = {
-        percentage: BatteryLevelAction.convertBatteryLevel(rawBatteryLevel),
-        isCharging: (chargingStatus & BatteryLevelAction.CHARGING_STATUS_MASK) !== 0,
-        isConnected: true,
-      };
-
-      streamDeck.logger.debug('Updated state', { state: this.currentState });
-      await this.updateUI();
-    } catch (error) {
-      streamDeck.logger.error('Error updating battery status', { error });
-      this.currentState = {
-        percentage: null,
-        isCharging: false,
-        isConnected: false,
-      };
-      await this.updateUI();
-    } finally {
-      // Always close the device connection
-      if (device) {
+      if (knownWorkingDevice && knownWorkingDevice.path) {
         try {
-          streamDeck.logger.debug('Closing HID device');
-          device.close();
+          connectedDevice = new HID.HID(knownWorkingDevice.path);
+          deviceInfo = knownWorkingDevice;
+          
+          // Determine model
+          if (deviceInfo.vendorId === 0x1038) {
+            if (deviceInfo.productId === 0x12ad) model = 'Arctis 7 2019';
+            else if (deviceInfo.productId === 0x1260) model = 'Arctis 7 2017';
+            else if (deviceInfo.productId === 0x1294) model = 'Arctis Pro';
+            else if (deviceInfo.productId === 0x12b3) model = 'Arctis 1 Wireless';
+          }
         } catch (error) {
-          streamDeck.logger.error('Error closing device', { error });
+          streamDeck.logger.error('Error connecting to known working device:', error);
         }
       }
+
+      // If we couldn't connect to the known working device, try each device
+      if (!connectedDevice) {
+        for (const device of steelSeriesDevices) {
+          if (!device.path) continue;
+
+          try {
+            const tempDevice = new HID.HID(device.path);
+            
+            // Try to get battery level to verify this is the correct interface
+            try {
+              tempDevice.write([0x06, 0x18]);
+              const response = tempDevice.readTimeout(1000);
+              
+              if (response && response[2]) {
+                connectedDevice = tempDevice;
+                deviceInfo = device;
+                
+                // Determine model
+                if (device.vendorId === 0x1038) {
+                  if (device.productId === 0x12ad) model = 'Arctis 7 2019';
+                  else if (device.productId === 0x1260) model = 'Arctis 7 2017';
+                  else if (device.productId === 0x1294) model = 'Arctis Pro';
+                  else if (device.productId === 0x12b3) model = 'Arctis 1 Wireless';
+                }
+                break;
+              }
+            } catch {
+              tempDevice.close();
+              continue;
+            }
+            
+            tempDevice.close();
+          } catch {
+            // Silently continue to the next device
+          }
+        }
+      }
+
+      if (!connectedDevice || !deviceInfo) {
+        streamDeck.logger.info('Could not find a working headset interface');
+        this.updateDisconnectedState();
+        return;
+      }
+
+      // Store the connected device for cleanup
+      this.currentDevice = connectedDevice;
+
+      // Get battery level
+      try {
+        connectedDevice.write([0x06, 0x18]);
+        const response = connectedDevice.readTimeout(1000);
+        
+        if (!response || !response[2]) {
+          throw new Error('Invalid response from headset');
+        }
+
+        // Check if charging via USB detection
+        const isChargingViaUSB = this.isHeadsetChargingViaUSB();
+
+        this.currentState = {
+          percentage: Math.min(response[2], 100),
+          isCharging: isChargingViaUSB,
+          isConnected: true,
+          model
+        };
+
+        streamDeck.logger.debug('Updated state', { state: this.currentState });
+        await this.updateUI();
+      } catch (error) {
+        streamDeck.logger.error('Error reading battery level:', error);
+        this.updateDisconnectedState();
+      }
+    } catch (error) {
+      streamDeck.logger.error('Error updating battery status:', error);
+      this.updateDisconnectedState();
     }
+  }
+
+  private isHeadsetChargingViaUSB(): boolean {
+    try {
+      const devices = HID.devices();
+      const steelSeriesDevices = devices.filter(d => 
+        d.manufacturer && d.manufacturer.includes('SteelSeries') &&
+        d.vendorId === 0x1038
+      );
+      
+      const bootloaderDevices = steelSeriesDevices.filter(d => 
+        d.productId === ARCTIS_7_BOOTLOADER_PRODUCT_ID && 
+        d.product && d.product.includes('Bootloader')
+      );
+      
+      return bootloaderDevices.length > 0;
+    } catch (error) {
+      streamDeck.logger.error('Error checking if headset is charging via USB:', error);
+      return false;
+    }
+  }
+
+  private updateDisconnectedState() {
+    this.currentState = {
+      percentage: null,
+      isCharging: false,
+      isConnected: false,
+      model: undefined
+    };
+    this.updateUI();
   }
 
   private async updateUI(ev?: WillAppearEvent<Settings>) {
@@ -194,7 +250,8 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
       return;
     }
 
-    const title = `${this.currentState.percentage}%${this.currentState.isCharging ? ' ⚡' : ''}`;
+    const modelPrefix = this.currentState.model ? `${this.currentState.model}\n` : '';
+    const title = `${modelPrefix}${this.currentState.percentage}%${this.currentState.isCharging ? ' ⚡' : ''}`;
     streamDeck.logger.debug('Updating UI', { title });
     await ev.action.setTitle(title);
   }
