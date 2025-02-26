@@ -1,0 +1,41 @@
+# TODO List
+
+## UI/UX Improvements
+
+### Alert Behavior
+
+- [ ] Remove alert flash when headset is disconnected
+  - Modify `updateUI()` in `src/actions/battery-level.ts`
+  - Silently update the UI state without calling `showAlert()`
+
+### Settings UI
+
+- [ ] Add headset selector to property inspector
+  - Update `battery-level.html` to add dropdown/select component
+  - Add supported headsets list:
+    - Arctis 7 2019 (0x1038, 0x12ad)
+    - Arctis 7 2017 (0x1038, 0x1260)
+    - Arctis Pro (0x1038, 0x1294)
+    - Arctis 1 Wireless (0x1038, 0x12b3)
+  - Store selected headset in settings
+
+### Visual Design
+
+- [ ] Add headset icon
+
+  - Design/source appropriate headset icon
+  - Add to plugin assets
+  - Update UI to display icon above battery status
+
+- [ ] Simplify title display
+  - Remove model name from title
+  - Show only battery percentage and charging emoji
+  - Position underneath the headset icon
+  - Format: "XX% ⚡" (when charging)
+
+### Performance
+
+- [ ] Update default polling interval
+  - Change default from 30s to 10s in `battery-level.html`
+  - Update `pollingInterval` default in range component
+  - Test battery impact of increased polling frequency
