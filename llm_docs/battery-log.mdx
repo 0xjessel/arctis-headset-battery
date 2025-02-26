@@ -25,3 +25,23 @@ This file records raw HID response bytes and battery level readings from the Ste
   - Battery level in byte 2 (0x5a = 90) appears to directly represent percentage
   - Byte 3 is 0x4d (77), which doesn't match the expected charging indicator pattern from other implementations
   - Multiple non-zero bytes after the battery level, but their purpose is currently unknown
+
+### Test 2
+
+- **Timestamp**: 2024-03-19 16:30 UTC
+- **Raw Response**: `[06 18 60 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00]`
+- **Battery Level**: 96% (0x60)
+- **Charging Status**: Not charging (no bootloader devices detected)
+- **Power State**: On
+- **Notes**:
+  - First two bytes (0x06, 0x18) match our command echo
+  - Battery level in byte 2 (0x60 = 96) continues to directly represent percentage
+  - Byte 3 and all subsequent bytes are 0x00, which is different from Test 1
+  - This test shows a simpler response pattern with zeros after the battery level
+  - The difference in response patterns between Test 1 and 2 suggests that the additional bytes may be related to other headset states or may be non-deterministic
+  - Three interfaces were detected:
+    1. Usage: 1, UsagePage: 12
+    2. Usage: 514, UsagePage: 65347 (this is our target interface)
+    3. Usage: 1, UsagePage: 65280
+  - The headset was plugged in via USB for a few minutes before this test, then unplugged for the test
+  - The higher battery level (96% vs 90% in Test 1) suggests successful charging between tests
