@@ -105,8 +105,13 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
   }
 
   private startPolling(settings?: Settings) {
-    const interval = (settings?.pollingInterval ?? 30) * 1000; // Convert to milliseconds
+    // Default to 5 seconds if not specified
+    const interval = (settings?.pollingInterval ?? 5) * 1000; // Convert to milliseconds
     streamDeck.logger.debug('Starting polling', { interval });
+    
+    // Clear any existing interval before starting a new one
+    this.stopPolling();
+    
     this.pollingInterval = setInterval(() => this.updateBatteryStatus(), interval);
     // Initial update
     this.updateBatteryStatus();
