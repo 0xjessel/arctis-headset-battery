@@ -4,9 +4,21 @@ A Stream Deck plugin that displays the battery level of your SteelSeries Arctis 
 
 ## Features
 
-- Displays battery percentage (0-100%)
-- Configurable polling interval
-- Visual alert when headset is disconnected
+- Displays battery percentage (0-100%) with charging indicator (⚡)
+- Configurable polling interval (5-60 seconds, default: 30s)
+- Force fetch battery status by pressing the key
+- Visual indicator when headset is disconnected (-)
+- Automatic charging detection when connected via USB
+
+## Usage
+
+1. Add the "Battery Level" action to your Stream Deck
+2. The key will display:
+   - Battery percentage and charging icon when connected (e.g., "100% ⚡")
+   - Charging icon only ("⚡") when disconnected but charging via USB
+   - Dash ("-") when disconnected and not charging
+3. Press the key at any time to force an immediate battery status update
+4. Configure the polling interval in settings (default: 30 seconds)
 
 ## Supported Devices
 
@@ -38,6 +50,18 @@ The following devices are supported in code but have not been verified:
 3. Build the plugin:
    ```bash
    npm run build
+   ```
+4. Set Stream Deck to developer mode
+   ```
+   streamdeck dev
+   ```
+5. Link the plugin
+   ```
+   streamdeck link com.0xjessel.arctis-headset-battery.sdPlugin
+   ```
+6. Restart the plugin
+   ```
+   streamdeck restart com.0xjessel.arctis-headset-battery
    ```
 
 ## Development
@@ -91,6 +115,42 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 [MIT](LICENSE)
 
 ## Technical Details
+
+### Polling and Updates
+
+The plugin checks the battery status in two ways:
+
+1. Automatic polling every 30 seconds (configurable from 5-60 seconds)
+2. Manual update when the user presses the key
+
+The default 30-second polling interval was chosen to balance responsiveness with battery life and system resource usage. Users can adjust this in the settings if they prefer more frequent updates.
+
+### Error Handling and Troubleshooting
+
+The plugin includes robust error handling for various scenarios:
+
+1. **Disconnected Headset**
+
+   - Display shows "-" when the headset is disconnected
+   - Continues polling to detect when headset becomes available
+   - No error alerts to avoid disrupting the user
+
+2. **USB Connection Issues**
+
+   - Automatically attempts to reconnect if the USB connection fails
+   - Tries multiple interfaces if the primary one isn't responding
+   - Falls back to disconnected state if all attempts fail
+
+3. **Invalid Battery Values**
+
+   - Caps battery percentage at 100% if device reports higher values
+   - Filters out invalid readings to prevent display glitches
+   - Maintains last known good value until next valid reading
+
+4. **Common Issues**
+   - If the key shows "-", try pressing it to force a refresh
+   - If charging detection isn't working, ensure the headset is connected directly to your PC (not through a USB hub)
+   - If battery updates seem delayed, try reducing the polling interval in settings
 
 ### Headset Communication Protocol
 

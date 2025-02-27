@@ -15,11 +15,7 @@ build/
 com.0xjessel.arctis-headset-battery/logs/
 
 # IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+.vscode/
 
 # IDE - JetBrains
 .idea/
