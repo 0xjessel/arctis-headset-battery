@@ -318,14 +318,14 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
     if (!this.currentState.isConnected) {
       streamDeck.logger.info('Headset disconnected');
-      await ev.action.setTitle('-');
+      // When disconnected, only show charging emoji if charging, otherwise show dash
+      await ev.action.setTitle(this.currentState.isCharging ? '⚡' : '-');
       return;
     }
 
-    // Only add the charging emoji (and its space) when actually charging
-    const title = this.currentState.isCharging 
-      ? `${this.currentState.percentage}% ⚡` 
-      : `${this.currentState.percentage}%`;
+    // Add space before charging emoji when connected
+    const chargingEmoji = this.currentState.isCharging ? ' ⚡' : '';
+    const title = `${this.currentState.percentage}%${chargingEmoji}`;
     await ev.action.setTitle(title);
   }
 } 
