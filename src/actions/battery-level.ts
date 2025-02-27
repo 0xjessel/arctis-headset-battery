@@ -76,6 +76,12 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
   private currentDevice?: HID.HID;
   private lastEvent?: WillAppearEvent<Settings>;
 
+  override async onKeyUp(ev: KeyUpEvent<Settings>): Promise<void> {
+    streamDeck.logger.info('Key pressed, forcing battery status update');
+    await this.updateBatteryStatus();
+    await this.updateUI(ev);
+  }
+
   override async onWillAppear(ev: WillAppearEvent<Settings>): Promise<void> {
     streamDeck.logger.info('Action appearing', {
       settings: ev.payload.settings
@@ -105,8 +111,8 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
   }
 
   private startPolling(settings?: Settings) {
-    // Default to 5 seconds if not specified
-    const interval = (settings?.pollingInterval ?? 5) * 1000; // Convert to milliseconds
+    // Default to 30 seconds if not specified
+    const interval = (settings?.pollingInterval ?? 30) * 1000; // Convert to milliseconds
     streamDeck.logger.debug('Starting polling', { interval });
     
     // Clear any existing interval before starting a new one
@@ -318,7 +324,7 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
     this.updateUI(this.lastEvent);
   }
 
-  private async updateUI(ev?: WillAppearEvent<Settings>) {
+  private async updateUI(ev?: WillAppearEvent<Settings> | KeyUpEvent<Settings>) {
     if (!ev) {
       streamDeck.logger.warn('No event provided to updateUI, skipping update');
       return;
