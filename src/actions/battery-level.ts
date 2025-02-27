@@ -306,9 +306,12 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
   }
 
   private updateDisconnectedState() {
+    // Check if headset is charging via USB before updating state
+    const isChargingViaUSB = this.isHeadsetChargingViaUSB();
+    
     this.currentState = {
       percentage: null,
-      isCharging: false,
+      isCharging: isChargingViaUSB,
       isConnected: false,
       model: undefined
     };
