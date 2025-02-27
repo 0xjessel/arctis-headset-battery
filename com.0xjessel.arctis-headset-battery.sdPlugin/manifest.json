@@ -6,7 +6,7 @@
 		{
 			"Name": "Battery Level",
 			"UUID": "com.0xjessel.arctis-headset-battery.battery-level",
-			"Icon": "imgs/actions/battery/icon",
+			"Icon": "imgs/actions/battery-level/icon",
 			"Tooltip": "Display the battery level of your Arctis headset",
 			"PropertyInspectorPath": "ui/battery-level.html",
 			"Controllers": [
@@ -14,10 +14,15 @@
 			],
 			"States": [
 				{
-					"Image": "imgs/actions/battery/key",
-					"TitleAlignment": "middle"
+					"Image": "imgs/actions/battery-level/headphones",
+					"TitleAlignment": "center",
+					"FontSize": "6",
+					"FontFamily": "Arial",
+					"ShowTitle": true,
+					"TitleVerticalAlignment": "bottom"
 				}
-			]
+			],
+			"UserTitleEnabled": false
 		}
 	],
 	"Category": "Arctis Headset Battery",

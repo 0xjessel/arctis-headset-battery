@@ -82,6 +82,7 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
     });
     // Store the event for later use
     this.lastEvent = ev;
+    
     // Start polling when the action becomes visible
     this.startPolling(ev.payload.settings);
     await this.updateUI(ev);
@@ -317,12 +318,14 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
     if (!this.currentState.isConnected) {
       streamDeck.logger.info('Headset disconnected');
-      await ev.action.setTitle('Disconnected');
+      await ev.action.setTitle('-');
       return;
     }
 
-    const modelPrefix = this.currentState.model ? `${this.currentState.model}\n` : '';
-    const title = `${modelPrefix}${this.currentState.percentage}%${this.currentState.isCharging ? ' ⚡' : ''}`;
+    // Only add the charging emoji (and its space) when actually charging
+    const title = this.currentState.isCharging 
+      ? `${this.currentState.percentage}% ⚡` 
+      : `${this.currentState.percentage}%`;
     await ev.action.setTitle(title);
   }
 } 
