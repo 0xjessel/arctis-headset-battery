@@ -2,6 +2,8 @@
 
 A Stream Deck plugin that displays the battery level of your SteelSeries Arctis wireless headset.
 
+![Arctis Headset Battery Plugin](com.0xjessel.arctis-headset-battery.sdPlugin/imgs/plugin/marketplace.png)
+
 ## Features
 
 - Displays battery percentage (0-100%) with charging indicator (⚡)
