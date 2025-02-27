@@ -45,3 +45,23 @@ This file records raw HID response bytes and battery level readings from the Ste
     3. Usage: 1, UsagePage: 65280
   - The headset was plugged in via USB for a few minutes before this test, then unplugged for the test
   - The higher battery level (96% vs 90% in Test 1) suggests successful charging between tests
+
+### Test 3
+
+- **Timestamp**: 2024-03-20 (current date)
+- **Raw Response**: `[06 18 54 57 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00]`
+- **Battery Level**: 84% (0x54)
+- **Charging Status**: Not charging (no bootloader devices detected)
+- **Power State**: On
+- **Notes**:
+  - First two bytes (0x06, 0x18) match our command echo
+  - Battery level in byte 2 (0x54 = 84) continues to directly represent percentage
+  - Byte 3 is 0x57 (87), which is non-zero unlike Test 2 but different from Test 1
+  - All bytes after byte 3 are 0x00
+  - Three interfaces were detected:
+    1. Usage: 1, UsagePage: 12
+    2. Usage: 514, UsagePage: 65347 (this is our target interface)
+    3. Usage: 1, UsagePage: 65280
+  - The battery level has decreased from previous tests (84% vs 96% in Test 2), which further confirms that byte 2 represents battery percentage
+  - The non-zero value in byte 3 (0x57) differs from both previous tests, suggesting this byte may contain other status information not directly related to battery level
+  - The headset was used for about an hour between Test 2 and Test 3, which explains the battery level decrease from 96% to 84%

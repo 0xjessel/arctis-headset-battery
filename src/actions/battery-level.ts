@@ -317,7 +317,6 @@ export class BatteryLevelAction extends SingletonAction<Settings> {
 
     if (!this.currentState.isConnected) {
       streamDeck.logger.info('Headset disconnected');
-      await ev.action.showAlert();
       await ev.action.setTitle('Disconnected');
       return;
     }
