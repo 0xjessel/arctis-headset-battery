@@ -7,7 +7,7 @@ A Stream Deck plugin that displays the battery level of your SteelSeries Arctis 
 ## Features
 
 - Displays battery percentage (0-100%) with charging indicator (⚡)
-- Configurable polling interval (5-60 seconds, default: 30s)
+- Configurable polling interval (5-60 seconds, default: 15s)
 - Force fetch battery status by pressing the key
 - Visual indicator when headset is disconnected (-)
 - Automatic charging detection when connected via USB
@@ -20,7 +20,7 @@ A Stream Deck plugin that displays the battery level of your SteelSeries Arctis 
    - Charging icon only ("⚡") when disconnected but charging via USB
    - Dash ("-") when disconnected and not charging
 3. Press the key at any time to force an immediate battery status update
-4. Configure the polling interval in settings (default: 30 seconds)
+4. Configure the polling interval in settings (default: 15 seconds)
 
 ## Supported Devices
 
@@ -122,10 +122,10 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 The plugin checks the battery status in two ways:
 
-1. Automatic polling every 30 seconds (configurable from 5-60 seconds)
+1. Automatic polling every 15 seconds (configurable from 5-60 seconds)
 2. Manual update when the user presses the key
 
-The default 30-second polling interval was chosen to balance responsiveness with battery life and system resource usage. Users can adjust this in the settings if they prefer more frequent updates.
+The default 15-second polling interval was chosen to balance responsiveness with battery life and system resource usage. Users can adjust this in the settings if they prefer more or less frequent updates.
 
 ### Error Handling and Troubleshooting
 

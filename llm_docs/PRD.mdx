@@ -2,7 +2,7 @@
 
 ### Overview
 
-This plugin will display the battery level of an Arctis wireless headset on an Elgato Stream Deck key. It will poll for the battery status every 30 seconds (configurable) and support the following battery states:
+This plugin will display the battery level of an Arctis wireless headset on an Elgato Stream Deck key. It will poll for the battery status every 15 seconds (configurable) and support the following battery states:
 
 - **Battery Levels:** 0-100%
 - **Disconnected State:** Detect when the headset is not connected
@@ -151,9 +151,10 @@ After extensive testing with the Arctis 7 2019 model, we've concluded that relia
 
 - **Polling Frequency:**
 
-  - Battery level changes slowly, so frequent polling is unnecessary
-  - A 30-second polling interval is reasonable for most use cases
+  - Battery level changes slowly, but users may want more frequent updates
+  - A 15-second polling interval provides good balance of responsiveness and resource usage
   - More frequent polling may impact battery life of the headset
+  - Users can configure polling from 5-60 seconds based on their needs
 
 - **Device Reconnection:**
   - The code should attempt to reconnect if the headset becomes unavailable
@@ -186,7 +187,7 @@ This comprehensive understanding of the USB HID protocol for SteelSeries Arctis 
 
 ### Plugin Functionality
 
-- **Polling Interval:** Default 30 seconds (configurable via settings)
+- **Polling Interval:** Default 15 seconds (configurable via settings)
 - **Battery Fetching Method:** Reverse-engineered using USB HID or existing Windows APIs
 - **Stream Deck Integration:**
   - Uses the [Stream Deck SDK](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started)
@@ -224,7 +225,7 @@ This comprehensive understanding of the USB HID protocol for SteelSeries Arctis 
   - **Format the UI Elements:**
     - Display the headphone icon as the primary visual element.
     - Show the battery percentage centered below the icon.
-  - Poll for this data every 30 seconds by default (configurable by the user)
+  - Poll for this data every 15 seconds by default (configurable by the user)
 
 * **Configuration:**
 
