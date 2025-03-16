@@ -6,7 +6,7 @@ A Stream Deck plugin that displays the battery level of your SteelSeries Arctis 
 
 ## Demo
 
-<img src="assets/arctis_battery.gif" alt="GIF demo" style="max-height: 500px;">
+<img src="assets/arctis_battery.gif" alt="GIF demo" width="500px">
 
 ## Features
 
